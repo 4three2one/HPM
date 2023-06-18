@@ -56,6 +56,80 @@ def build_dataset(is_train, args):
 
     return dataset
 
+from util.my_dataset import *
+def read_split_data(root: str, val_rate: float = 0.2):
+    import random
+    import json
+    random.seed(0)  # 保证随机结果可复现
+    assert os.path.exists(root), "dataset root: {} does not exist.".format(root)
+
+    # 遍历文件夹，一个文件夹对应一个类别
+    flower_class = [cla for cla in os.listdir(root) if os.path.isdir(os.path.join(root, cla))]
+    # 排序，保证顺序一致
+    flower_class.sort()
+    # 生成类别名称以及对应的数字索引
+    class_indices = dict((k, v) for v, k in enumerate(flower_class))
+    json_str = json.dumps(dict((val, key) for key, val in class_indices.items()), indent=4)
+    with open('class_indices.json', 'w') as json_file:
+        json_file.write(json_str)
+
+    train_images_path = []  # 存储训练集的所有图片路径
+    train_images_label = []  # 存储训练集图片对应索引信息
+    val_images_path = []  # 存储验证集的所有图片路径
+    val_images_label = []  # 存储验证集图片对应索引信息
+    every_class_num = []  # 存储每个类别的样本总数
+    supported = [".jpg", ".JPG", ".png", ".PNG"]  # 支持的文件后缀类型
+    # 遍历每个文件夹下的文件
+    for cla in flower_class:
+        cla_path = os.path.join(root, cla)
+        # 遍历获取supported支持的所有文件路径
+        images = [os.path.join(root, cla, i) for i in os.listdir(cla_path)
+                  if os.path.splitext(i)[-1] in supported]
+        # 获取该类别对应的索引
+        image_class = class_indices[cla]
+        # 记录该类别的样本数量
+        every_class_num.append(len(images))
+        # 按比例随机采样验证样本
+        val_path = random.sample(images, k=int(len(images) * val_rate))
+
+        for img_path in images:
+            if img_path in val_path:  # 如果该路径在采样的验证集样本中则存入验证集
+                val_images_path.append(img_path)
+                val_images_label.append(image_class)
+            else:  # 否则存入训练集
+                train_images_path.append(img_path)
+                train_images_label.append(image_class)
+    return train_images_path, train_images_label, val_images_path, val_images_label
+def build_dataset_mine(args):
+
+    transform_train = build_transform(True, args)
+    transform_val = build_transform(False, args)
+
+    if args.dataset_name.startswith("PlantDoc"):
+        root_train = os.path.join(args.data_path, 'train')
+        train_dataset = datasets.ImageFolder(root_train, transform=transform_train)
+        root_val = os.path.join(args.data_path, 'val')
+        val_dataset = datasets.ImageFolder(root_val, transform=transform_train)
+
+    if args.dataset_name.startswith("plantv"):
+        train_images_path, train_images_label, val_images_path, val_images_label = read_split_data(args.data_path)
+        # 实例化训练数据集
+        train_dataset = MyDataSet(images_path=train_images_path,
+                                  images_class=train_images_label,
+                                  transform=transform_train)
+
+        # 实例化验证数据集
+        val_dataset = MyDataSet(images_path=val_images_path,
+                                images_class=val_images_label,
+                                transform=transform_val)
+    if args.dataset_name.startswith("IP102"):
+        train_dataset = IP102(txt_path=os.path.join(args.data_path, "train_new.txt"), transform=transform_train)
+        val_dataset = IP102(txt_path=os.path.join(args.data_path, "test_new.txt"), transform=transform_val)
+
+    if args.dataset_name.startswith("deepweeds"):
+        train_dataset = DeepWeeds(csv_path=os.path.join(args.data_path, "train.csv"), transform=transform_train)
+        val_dataset = DeepWeeds(csv_path=os.path.join(args.data_path, "test.csv"), transform=transform_val)
+    return train_dataset,val_dataset
 
 def build_transform(is_train, args):
     mean = IMAGENET_DEFAULT_MEAN

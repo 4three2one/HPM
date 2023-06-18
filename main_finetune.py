@@ -30,7 +30,7 @@ from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 from util import utils
 import util.lr_decay as lrd
 import util.misc as misc
-from util.datasets import build_dataset
+from util.datasets import build_dataset_mine
 from util.pos_embed import interpolate_pos_embed
 from util.misc import NativeScalerWithGradNormCount as NativeScaler
 
@@ -41,6 +41,7 @@ from engine_finetune import train_one_epoch, evaluate
 
 def get_args_parser():
     parser = argparse.ArgumentParser('Hard Patches Mining for Masked Image Modeling', add_help=False)
+
     parser.add_argument('--batch_size', default=64, type=int,
                         help='Batch size per GPU (effective batch size is batch_size * accum_iter * # gpus')
     parser.add_argument('--epochs', default=50, type=int)
@@ -48,8 +49,8 @@ def get_args_parser():
                         help='Accumulate gradient iterations (for increasing the effective batch size under memory constraints)')
 
     # Model parameters
-    parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
-                        help='Name of model to train')
+    # parser.add_argument('--model', default='vit_large_patch16', type=str, metavar='MODEL',
+    #                     help='Name of model to train')
     parser.add_argument('--input_size', default=224, type=int,
                         help='images input size')
     parser.add_argument('--drop_path', type=float, default=0.1, metavar='PCT',
@@ -104,8 +105,8 @@ def get_args_parser():
                         help='How to apply mixup/cutmix params. Per "batch", "pair", or "elem"')
 
     # * Finetuning params
-    parser.add_argument('--finetune', default='',
-                        help='finetune from checkpoint')
+    # parser.add_argument('--finetune', default='',
+    #                     help='finetune from checkpoint')
     parser.add_argument('--global_pool', action='store_true')
     parser.set_defaults(global_pool=True)
     parser.add_argument('--cls_token', action='store_false', dest='global_pool',
@@ -115,17 +116,17 @@ def get_args_parser():
     parser.set_defaults(teacher=False)
 
     # Dataset parameters
-    parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
-                        help='dataset path')
+    # parser.add_argument('--data_path', default='/datasets01/imagenet_full_size/061417/', type=str,
+    #                     help='dataset path')
     parser.add_argument('--dataloader_type', type=str, default='nori',
                         help="""dataloader type, folder, nori, dpflow..""")
-    parser.add_argument('--nb_classes', default=1000, type=int,
-                        help='number of the classification types')
+    # parser.add_argument('--nb_classes', default=1000, type=int,
+    #                     help='number of the classification types')
 
-    parser.add_argument('--output_dir', default='./output_dir',
-                        help='path where to save, empty for no saving')
-    parser.add_argument('--log_dir', default='./output_dir',
-                        help='path where to tensorboard log')
+    # parser.add_argument('--output_dir', default='./output_dir',
+    #                     help='path where to save, empty for no saving')
+    # parser.add_argument('--log_dir', default='./output_dir',
+    #                     help='path where to tensorboard log')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
     parser.add_argument('--seed', default=0, type=int)
@@ -154,6 +155,35 @@ def get_args_parser():
 
     return parser
 
+def update_args_mine(parser):
+    dateset_index = 0
+    model_index = 0
+
+    dataset_info=[
+        {"name":"plantvillage","nb_classes":39,'data_path':'/data/ubuntu-down/Plant_leaf_diseases_augmentation'}
+    ]
+    model_info = [
+        {"name": "vit_base_patch16",  'finetinue_ckp': '/data/ubuntu-down/Plant_leaf_diseases_augmentation'}
+    ]
+
+    using_dataset=dataset_info[dateset_index]
+    using_model=model_info[model_index]
+
+    parser.add_argument('--model', default=f'{using_model["name"]}', type=str, metavar='MODEL',
+                        help='Name of model to train')
+    parser.add_argument('--data_path', default=f'{using_dataset["data_path"]}', type=str,
+                        help='dataset path')
+    parser.add_argument('--nb_classes', default=f'{using_dataset["nb_classes"]}', type=int,
+                        help='number of the classification types')
+    parser.add_argument('--output_dir', default=f'./output/finetune/{using_dataset["name"]}/{using_model["name"]}',
+                        help='path where to save, empty for no saving')
+    parser.add_argument('--log_dir', default=f'./output/finetune/{using_dataset["name"]}/{using_model["name"]}',
+                        help='path where to save, empty for no saving')
+    parser.add_argument('--dataset_name', default=f'{using_dataset["name"]}')
+    parser.add_argument('--finetune', default='/media/xjw/app/windows_down/vit_base_patch16_ep800_84.2.pth',
+                        help='finetune from checkpoint')
+    return parser
+
 
 def main(args):
     misc.init_distributed_mode(args)
@@ -170,10 +200,11 @@ def main(args):
 
     cudnn.benchmark = True
 
-    dataset_train = build_dataset(is_train=True, args=args)
-    dataset_val = build_dataset(is_train=False, args=args)
+    # dataset_train = build_dataset(is_train=True, args=args)
+    # dataset_val = build_dataset(is_train=False, args=args)
 
-    if args.distributed:  # args.distributed:
+    dataset_train, dataset_val = build_dataset_mine(args=args)
+    if True:  # args.distributed:
         num_tasks = misc.get_world_size()
         global_rank = misc.get_rank()
         sampler_train = torch.utils.data.DistributedSampler(
@@ -258,10 +289,10 @@ def main(args):
         msg = model.load_state_dict(checkpoint_model, strict=False)
         print(msg)
 
-        if args.global_pool:
-            assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
-        else:
-            assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
+        # if args.global_pool:
+        #     assert set(msg.missing_keys) == {'head.weight', 'head.bias', 'fc_norm.weight', 'fc_norm.bias'}
+        # else:
+        #     assert set(msg.missing_keys) == {'head.weight', 'head.bias'}
 
         # manually initialize fc layer
         trunc_normal_(model.head.weight, std=2e-5)
@@ -392,6 +423,7 @@ if __name__ == '__main__':
     #     builtins.print = print_pass
         
     args = get_args_parser()
+    args=update_args_mine(args)
     args = args.parse_args()
     if args.output_dir:
         Path(args.output_dir).mkdir(parents=True, exist_ok=True)
